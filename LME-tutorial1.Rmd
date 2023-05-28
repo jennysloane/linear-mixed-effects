@@ -1,0 +1,144 @@
+---
+title: "LME - Tutorial 1"
+output: html_document
+date: "2023-05-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+[Bodo Winter LME Tutorial 1 ](https://bodowinter.com/tutorial/bw_LME_tutorial1.pdf)
+
+# Linear	models	and	linear	mixed	effects	models	in	R:	Tutorial	1
+
+Assume you knew	nothing	about	males	and	females, and you were	interested in	whether the	voice	pitch	of males and females	differs, and if so,	by how much.
+
+- pitch ~ sex "pitch predicted by sex" or "pitch as a function of sex" 
+- dependent ~ independent (predictor/explanatory)
+- pitch ~ sex + \(\epsilon\) (random factors)
+- formula divided into stuff you can understand (fixed effects) and stuff you can't understand (random part "epsilon")
+
+```{r}
+pitch = c(233,204,242,130,112,142) 
+sex = c(rep("female",3),rep("male",3))
+my.df = data.frame(sex,pitch)
+my.df
+
+xmdl = lm(pitch ~ sex, my.df) # don't need to specify error term
+summary(xmdl)
+```
+
+- Intercept estimate = 226.33 which is mean of females pitches (takes female because it's alphabetical)
+- sexmale estimate = female average - male average (slope going from 0 to 1)
+- Multiple R-squared = "variance explained" 
+  - range from 0 - 1
+  - 0.921 = 92.1% of the stuff that's happening in our dataset is explained by our model (very high)
+- Adjusted R-squared adjusts for how many fixed effects in the model
+- "We	 constructed	 a	 linear	 model	 of	 pitch	 as	 a	 function	 of	 sex.	 This	 model	 was	significant	(F(1,4)=46.61,	p<0.01)"
+- sexmale p value is equal to f stat p value because only one effect, these numbers would be different if multiple fixed effects
+- Intercept is mean of females and sexmale is mean of males
+- p value of intercept is pretty meaningless - intercept is arbitrary and so will likely be different than 0, but important to look at p values for fixed effects 
+
+## Example with continuous factor (age)
+
+```{r}
+age = c(14,23,35,48,52,67) 
+pitch = c(252,244,240,233,212,204) 
+my.df = data.frame(age,pitch) 
+xmdl = lm(pitch ~ age, my.df) 
+summary(xmdl)
+```
+
+- intercept estimate = predicted pitch value for people with age 0... so not very interesting and the p value is meaningless 
+- age estimate -0.9099 = for every increase of age by 1, you decrease voice pitch by 0.9099 Hz
+
+# Meaningful	and	meaningless	intercepts
+
+**center the data** to make the intercept meaningful: subtract the mean age from each age value 
+
+```{r}
+my.df$age.c = my.df$age - mean(my.df$age) 
+xmdl = lm(pitch ~ age.c, my.df) 
+summary(xmdl)
+```
+
+- intercept is now the predicted boice pitch at the average age
+- slope and significance haven't changed
+- haven't changed the model, just the metrics to make the intercept more meaningful
+- easy to scale up model by adding in more factors
+  - example: pitch ~ sex + age + dialect + \(\epsilon\)
+
+# Assumptions
+
+## 1. Linearity
+
+- residual plot: fitted values (predicted means) are on the horizontal line at y=0 and the residuals are the vertical deviations from this line
+- the view is just a rotation of the actual data
+
+```{r}
+plot(fitted(xmdl),residuals(xmdl))
+```
+
+- important to check that there isn't any obvious pattern in the residuals 
+- if there is a nonlinear or curvy pattern, this would violate this linearity assumption
+- options if your plot indicates nonlinearity
+  - check that you haven't missed an important fixed effect 
+  - perform a nonlinear transformation of your response (e.g., log-transformation)
+  - perform a nonlinear transformation of your fixed effects (e.g., age -> age^2)
+  - if you see stripes in your residual plot, you're most likely dealing with categorical data and you should try a different class of models like logistic models
+  
+## 2. Absence of collinearity
+
+- when two fixed effects (predictors) are correlated with each other, they are said to be **collinear**
+- collinearity makes the interpretation of the model unstable 
+- if multiple predictors are very similar to each other, it becomes difficult or impossible to decide which is playing a role in the model, making interpreting the model results hard
+- how to get rid of collinearity?
+  - if you know you have multiple fixed effects that are similar, think about which one makes the most sense to keep and drop the otheres
+  - dimension reduction techniques like principal component analysis (PCA)
+
+## 3. Homoskedasticity or absence of heteroskedasticity
+
+- variance of your data should be approximately equal across the range of your predicted values
+- residuals of your model need to have about the same deviation from your predicted values
+- if this assumption is violated, you end up with heteroskedasticity or a problem with unequal variances
+- a good residual plot pretty much looks like a "blob" 
+- what to do if the variance is not homoscedastic?
+  - transforming your data often helps (e.g., log-transformation)
+  
+## 4. Normality of residuals
+
+- data is roughly normally distributed
+- arguably the least important assumption
+- most linear models are robust against violations of this assumption
+- if you want to check this assumption, you can make:
+  - a histogram of the residuals (should be relatively bell-shaped) 
+  - a Q-Q plot (data should fall near the line)
+
+```{r}
+hist(residuals(xmdl))
+qqnorm(residuals(xmdl))
+```
+
+## 5. Absence of influential data points 
+
+- can check using `dfbeta()`
+- DFbeta values = the values that the coeeficients would have to be adjusted if a particular data point is excluded (aka leave one out diangostics)
+- the DFbeta is pretty much how much the slope will change if you leave out any given data point (so closer to 0 the less influential)
+- a bit of room for interpretation of what makes a large or small DFbeta value
+- any value that changes the sign of the slope is definitely an influential point
+- what to do if you have influential data points?
+  - good idea to run the model with all the data points and again without the influential points. Report both and say if the interpretation changed at all
+
+```{r}
+dfbeta(xmdl)
+```
+
+## 6. Independence
+
+- by far the most important assumption
+- every observation must be independent from the others 
+- data points should come from different subjects and each subject should only contribute one data point
+
+A lot of times we want to collect more data per subject, like in a repeated measures design. If this is the case, you need to resolve these non-independencies at the analysis stage... this is where **mixed models** come in handy.
+

@@ -1,0 +1,222 @@
+---
+title: "LME - Tutorial 2"
+output: html_document
+date: "2023-05-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(lme4)
+```
+
+
+[Bodo Winter LME Tutorial 2 ](https://bodowinter.com/tutorial/bw_LME_tutorial2.pdf)
+
+# Fixed and random effects
+
+pitch ~ age + \(\epsilon\)
+
+- age = fixed effect
+- \(\epsilon\) = error term (probabilistic or stochastic part of the model)
+
+## Example study
+
+pitch ~ politeness (categorical factor with 2 levels: polite and informal) + sex + \(\epsilon\)
+
+- multiple measures per subject, each person gave multiple polite responses and multiple informal responses
+  - this immediately violates the independence assumption since multiple responses from the same person cannot be considered independent from each other
+- solution to this problem: add a **random effect** for subject (assumes a different "baseline" pitch for each person)
+- we can model these individual differences by assuming different **random intercepts** for each subject
+- in linear models we only had \(\epsilon\) and it had no interesting structure, but rather a general across-the-board error term
+- random effects essentially give structure to the error term \(\epsilon\)
+- the mix of fixed and random effects is what makes it a mixed model
+
+### Subject variance
+
+pitch ~ politeness + sex + (1|subject) + \(\epsilon\)
+
+- (1|subject) = "assume an intercept that's different for each subject"; this is telling your model it should expect that there's going to be multiple responses per subject and these responses will depend on each subject's baseline level
+  - this resolves the non-independence that stems from having multiple responses by the same subject
+  
+### Item variance
+
+pitch ~ politeness + sex + (1|subject) + (1|item) + \(\epsilon\)
+
+- similar to by-subject variation, we also expect by-item variation (7 items in this example)
+  - example: maybe one item "excusing for coming late" is more embarrassing and so the pitch for this item is higher across all participants - need to take this non-independence into account 
+- this resolves the non-independence that stems from having multiple responses by the same item
+
+# Mixed models in R
+
+- attitude
+  - pol = polite
+  - inf = informal
+- frequency = dependent variable (higher values = higher pitch)
+- random effects = subject and scenario (or items)
+
+```{r}
+politeness <- read_csv("http://www.bodowinter.com/tutorial/politeness_data.csv")
+
+politeness
+```
+
+- Check for missing data
+  - missing value in row 39
+```{r}
+which(is.na(politeness$frequency))
+```
+
+- relationship between politeness and pitch 
+
+```{r}
+boxplot(frequency ~ attitude*gender, col=c("white","lightgray"),politeness)
+```
+
+## Model 1:
+
+- includes no random effects
+- error because there is no random effect, with a mixed model, you need to have a random effect
+
+```{r}
+lmer(frequency ~ attitude, data=politeness)
+```
+
+## Model 2:
+
+- includes random intercepts for subjects and items
+
+```{r}
+politeness.model = lmer(frequency ~ attitude + (1|subject) + (1|scenario), data=politeness)
+
+summary(politeness.model)
+```
+
+- random effects
+  - as expected, there is more variability for subjects than scenario
+  - residuals stands for the variability that's not due to the other random effects 
+- fixed effects
+  - attitudepol = slope for the effect of politeness 
+  - -19.695 means that to go from informal to polite, you have to go down 19.695 Hz
+  - in other words, pitch is lower in polite speech than in informal speech by about 20 Hz
+- intercept = 202.588 is the average of the data in the informal condition 
+
+## Model 3
+
+- add in gender
+
+```{r}
+politeness.model = lmer(frequency ~ attitude + gender + (1|subject) + (1|scenario), data=politeness)
+
+summary(politeness.model)
+```
+
+- variation associated with random effect of "subject" dropped considerably 
+- the previous model didn't know about males and females so was it's predictions were more off
+- fixed effect of gender: females are about 109 Hz higher than males 
+- fixed effect of attitude: didn't change much
+- fixed effect intercept: now much higher as it represents the female category for informal condition 
+
+# Statistical significance
+
+- not such a straight forward way to report p values for mixed models, people have different opinions on this
+- suggestion here: focus on likelihood ratio test as a measn to attain p values
+- likelihood is the probability of seeing the data you collected given your model
+  - model comparison: model without the factor you're interested in and model with the factor you're interested in
+  - example (compare full model against a reduced model)
+    - model 1: hiking speed ~ gallon of water + flashlight
+    - model 2: hiking speed ~ flashlight
+    - significant difference between model 1 and 2, then you know the gallon of water matters
+
+## Null model
+
+- REML=FALSE (has to do with the likelihood estimator, necessary for comparing models using the likelihood ratio test)
+
+```{r}
+politeness.null = lmer(frequency ~ gender + (1|subject) + (1|scenario), data=politeness, REML=FALSE)
+```
+
+- gender = control variable (in both models)
+- attitude = test variable
+- if we were to leave gender out of null model also and there was a significant difference between the two models, we wouldn't know if it was because of gender or attitude
+
+## Full model 
+
+```{r}
+politeness.model = lmer(frequency ~ attitude + gender + (1|subject) + (1|scenario), data=politeness, REML=FALSE)
+```
+
+## ANOVA M1 vs. M2
+
+```{r}
+anova(politeness.null,politeness.model)
+```
+
+- interpretation: "politeness affected pitch (χ2(1)=11.62, p=0.00065), lowering it by about 19.7 Hz ± 5.6 (standard errors)" 
+
+## Interactions
+
+- in R, interactions between two factors are specified with a * rather than a +
+- if you get a significant interaction, you know that attitude and gender are significantly inter-dependent on each other
+
+# Random slopes vs random intercepts
+
+## Random intercept 
+
+```{r}
+coef(politeness.model)
+```
+
+- this model is called a **random intercept model**
+- we can see from the coefficients that each subject has a different intercept, but the fixed effects of attitude and gender are the same for everyone
+  - assumes that whatever the effect of politeness is, it's going to be the same for all subjects and items
+  - not necessarily a valid assumption - likely that the effect of politeness may differ for different items or different subjects
+
+## Random slope
+
+- subjects and items have different intercepts and they have different slopes for the effect of politeness
+
+```{r}
+politeness.null = lmer(frequency ~ gender + (1+attitude|subject) + (1+attitude|scenario), data=politeness, REML=FALSE)
+
+politeness.model = lmer(frequency ~ attitude + gender + (1+attitude|subject) + (1+attitude|scenario), data=politeness, REML=FALSE)
+```
+
+- (1+attitude|subject) means you tell the model to expect different baseline-levels of frequency and different responses to the main factor in question (attitude)
+
+```{r}
+coef(politeness.model)
+
+anova(politeness.null,politeness.model)
+```
+
+- Which random slopes should I specify? Are random slopes necessary at all?
+- it makes "hella sense to include random slopes most of the time. After all, you can almost always expect that people differ with how they react to an experimental manipulation!" and that the effect will be different for different items
+- evidence that mixed models without random slopes have relatively high Type I errors 
+
+# Assumptions
+
+- Same as assumptions for linear models (see Tutorial 1)
+- mixed effects models can still violate independence if you're missing an important fixed or random effect
+- `dfbeta()` doesn't work for mixed models to check for influential data points
+  - can check out the `influence.ME` package 
+  
+# Random vs Fixed effects
+
+- random effects: "expected to have a nonsystematic, idiosyncratic, unpredictable, or “random” influence on your data" (often subject and item)
+- fixed effects: "expected to have a systematic and predictable influence on your data"
+- another definition of fixed effects: "exhaust the population of interest" or "exhaust the levels of a factor" (gender and politeness are exhausted because we have operationalized all the possible factors)
+
+# Write up
+
+- specify all fixed effects and all random effects
+- mention whether you have random intercepts and/or random slopes
+- report likelihood ratio test with the coefficients/estimates, the standard errors, and p values
+- `citation("lme4")`
+
+## Example
+
+"We used R (R Core Team, 2012) and lme4 (Bates, Maechler & Bolker, 2012) to perform a linear mixed effects analysis of the relationship between pitch and politeness. As fixed effects, we entered politeness and gender (without interaction term) into the model. As random effects, we had intercepts for subjects and items, as well as by-subject and by-item random slopes for the effect of politeness. Visual inspection of residual plots did not reveal any obvious deviations from homoscedasticity or normality. P-values were obtained by likelihood ratio tests of the full model with the effect in question against the model without the effect in question."
